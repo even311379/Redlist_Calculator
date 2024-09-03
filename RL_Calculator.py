@@ -1,16 +1,16 @@
 from openpyxl import load_workbook
 from openpyxl import Workbook
+from openpyxl.styles import PatternFill
 
-wb = load_workbook(filename = 'Target.xlsx')
-sheet = wb['Assess_datatable']
-
+# wb = load_workbook(filename = 'Target.xlsx')
+# sheet = wb['Assess_datatable']
 
 def FormatData(FileName):
     ## store in this format
     ## {spe:{a:[], b:[], cd:[], e:[], rc:[]}}
     out = dict()
     sheet = load_workbook(FileName)['Assess_datatable']
-    for c in range(5, sheet.max_column):
+    for c in range(5, sheet.max_column + 1):
         spe = sheet.cell(2, c).value
         out[spe] = dict(a=[], b=[], cd=[], e=[], rc=[])
         for r in range(5, 18):
@@ -24,6 +24,9 @@ def FormatData(FileName):
             out[spe]['rc'].append(sheet.cell(r, c).value)
     return out
 
+## result = ["Category", "Criteria"]
+## ex: ["DD", ""] ["LC", ""] ["NT", "B1a"] ["VU", "A2bcd"]
+
 def GetA(a_data):
     decline_before = a_data[3]
     decline_after = a_data[8]
@@ -31,9 +34,9 @@ def GetA(a_data):
         decline_before = 0
     if not decline_after:
         decline_after = 0
-    decline = abs(decline_before) + abs(decline_after)
+    decline = decline_before + decline_after
     if decline == 0:
-        return [False]
+        return ["DD", ""]
     decline_time_unit = a_data[5]
 
     ## TODO: there is no way to get decline time in FUTURE, only past in included in source data
@@ -41,18 +44,18 @@ def GetA(a_data):
 
     if (decline_time_unit == 'Y' and decline_time_length >= 10) or \
     (decline_time_unit == 'G' and decline_time_length > 3) :
-        out = [True]
+        out = []
         has_ceased = a_data[10] == "B" 
-        if (decline >= 90 and has_ceased) or decline >= 70:
+        if (decline <= -90 and has_ceased) or decline <= -70:
             out.append("CR")
-        elif (decline >= 70 and has_ceased) or decline >= 50:
+        elif (decline <= 70 and has_ceased) or decline <= -50:
             out.append("EN")
-        elif (decline >= 50 and has_ceased) or decline >= 30:
+        elif (decline <= 50 and has_ceased) or decline <= -30:
             out.append("VU")
-        elif (decline >= 30 and has_ceased) or decline >= 20:
+        elif (decline <= 30 and has_ceased) or decline <= -20:
             out.append("NT")
         else:
-            return [False]
+            return ["LC", ""]
         if has_ceased:
             out.append("A1")
         else:
@@ -79,12 +82,14 @@ def GetA(a_data):
                 out[-1] += 'e'
                 break
         return out
-    return [False]
+    return ["DD", ""]
 
 
 def GetB(b_data):
     AOO = b_data[0] 
     EOO = b_data[1]
+    if not AOO and not EOO:
+        return ["DD", ""]
     if not AOO: # prevent empty error
         AOO = 99999
     if not EOO:
@@ -101,12 +106,11 @@ def GetB(b_data):
     declines = [False] * 5
     if b_data[17] == 'A': # continue decline in AOO/EOO
         if 'A' in b_data[18]:
-            declines[0] = True
+            declines[1] = True
         for c in "BCD":
             if c in b_data[18]:
-                declines[1] = True
+                declines[0] = True
                 break
-
 
     ## TODO: there is no way to check decline in habitat!!!
         ## declines[2] (iii) will always be False...    
@@ -133,11 +137,11 @@ def GetB(b_data):
     ## check false
     cons = (locations <= 10) + (sum(declines) > 0) + (sum(flutuations) > 0)
     if cons == 0:
-        return [False]
+        return ["LC", ""]
     if AOO >= 2000 and EOO >= 20000:
-        return [False]
+        return ["LC", ""]
 
-    out = [True]
+    out = []
     if cons == 1:
         out.append("NT")
     ## TODO: include locations as level judgement?
@@ -181,46 +185,46 @@ def GetC(data):
     b_data = data['b']
     cd_data = data['cd']
     if not cd_data[0]:
-        return [False]
+        return ["DD", ""]
     if type(cd_data[0]) == str:
         print(f"Error! should be number, {cd_data[0]}")
-        return [False]
+        return ["DD", ""]
     if cd_data[0] >= 20000:
-        return [False]
+        return ["LC", ""]
 
     # check C1
-    ## TODO: the C1 decline description is not robust enough to make judgement...
-        ## use ratio instead... somehow, is not precise ...
+    # TODO: the C1 decline description is not robust enough to make judgement...
+    # use ratio instead... somehow, is not precise ...
     C1_passed = False
     decline_before = a_data[3]
     decline_after = a_data[8]
     decline_time_unit = a_data[5]
-    decline_time_length = a_data[4] ## TODO: same FUTURE issue as in A 
+    decline_time_length = a_data[4]  # TODO: same FUTURE issue as in A
     if not decline_before:
         decline_before = 0
     if not decline_after:
         decline_after = 0
-    decline = abs(decline_before) + abs(decline_after)
-    if decline != 0:
-        ## translation is wrong in C1 in taiwan redlist of freshwater fish 
-        ## WRONG... it's definitely irrelavant to treat it in linear way...
+    decline = decline_before + decline_after
+    if decline < 0:
+        # translation is wrong in C1 in taiwan redlist of freshwater fish
+        # WRONG... it's definitely irrelavant to treat it in linear way...
         if decline_time_unit == 'Y':
-            C1_passed = decline / decline_time_length > 1
+            C1_passed = decline / decline_time_length <= -1
         elif decline_time_unit == 'G':
-            C1_passed = decline / decline_time_length > 3.33
+            C1_passed = decline / decline_time_length <= -3.33
 
     # check C2
     C2_passed = False
-    ## TODO: C2a is impossible to check in your data table!!! Skip
-        ## C2a description is so vague... (at least I don't know what it is about)
+    # TODO: C2a is impossible to check in your data table!!! Skip
+    # C2a description is so vague... (at least I don't know what it is about)
     # only use C2b for now
     if b_data[35] == 'Y':
         C2_passed = True
 
     # eval criteria ## TODO: (skip C1 and C2a to judge criteria)
     if (C1_passed + C2_passed) == 0:
-        return [False]
-    out = [True]
+        return ["LC", ""]
+    out = []
     n_individuals = cd_data[0]
     if n_individuals < 250:
         out.append("CR")
@@ -238,7 +242,6 @@ def GetC(data):
 
     if b_data[35] == 'Y':
         rs += 'b'
-    out.append(rs)
 
     if C1_passed and C2_passed:
         out.append(f"C1+C2{rs}")
@@ -254,7 +257,7 @@ def GetD(data):
     b_data = data['b']    
     cd_data = data['cd']
 
-    out = [True]
+    out = []
     if cd_data[0]:
         if cd_data[0] <= 50:
             out.append("CR")
@@ -270,6 +273,9 @@ def GetD(data):
             out.append("D1")
         if cd_data[0] <= 2500:
             return out
+    else:
+        return ["DD", ""]
+
     AOO = b_data[0]
     if not AOO: 
         AOO = 99999
@@ -277,21 +283,22 @@ def GetD(data):
     if not locations:
         locations = 999999
     if AOO <= 20 or locations <= 5:
-        return [True, "VU", "D2"]
+        return ["VU", "D2"]
     if AOO <= 50 or locations <= 10:
-        return [True, "NT", "D2"]
-    return [False]
+        return ["NT", "D2"]
+    return ["LC", ""]
 
 
 def GetE(e_data):
     if not e_data[0]:
-        return [False]
+        return ["DD", ""]
 
     ## TODO: ignore it, the data in data table is just wrong...
         # it's definitely not linear...
-    return [False]
+    return ["LC", ""]
 
-CriteriaValueMap = {"CR":0, "EN":1, "VU":2, "NT":3, "LC":4}
+CriteriaValueMap = {"CR":0, "EN":1, "VU":2, "NT":3, "LC":4, "DD":5}
+CriteriaValueColorMap = {"CR":"FF3737", "EN":"FF6C60", "VU":"FFC080", "NT":"FF8C69"}
 
 def ValueToCriteria(v):
     if v == 0:
@@ -305,7 +312,7 @@ def ValueToCriteria(v):
     return "LC"
 
 def Assess(data):
-    out_file = "assess_result.xlsx"
+    out_file = "assess_result_DD.xlsx"
     wb = Workbook()
     ws = wb.active
     ws.title = "results"
@@ -319,7 +326,6 @@ def Assess(data):
     ws.cell(1,7,value="Region Adjustment")
     ws.cell(1,8,value="Final")
     for c, s in enumerate(spe_list):
-        # print(s)
         results = [
             GetA(data[s]['a']),
             GetB(data[s]['b']),
@@ -328,27 +334,43 @@ def Assess(data):
             GetE(data[s]['e'])
         ]
         ws.cell(c+2, 1, value=s)
-        LowestValue = 4
-        LowestResults = []
-        for r, result in enumerate(results):
-            # print(r)
-            if result[0]:
-                ws.cell(c+2, r+2, value=f"{result[1]} {result[2]}")
-                if CriteriaValueMap[result[1]] < LowestValue:
-                    LowestValue = CriteriaValueMap[result[1]]
-        for result in results:
-            if result[0]:
-                if CriteriaValueMap[result[1]] == LowestValue:
-                    LowestResults.append(result[2])
         r_adj = data[s]['rc'][4]
         ws.cell(c+2, 7, value=r_adj)
-        LowestValue += r_adj
-        if LowestValue < 0:
-            LowestValue = 0
-        if LowestValue > 4:
-            LowestValue = 4
+        LowestValue = 5
+        LowestResults = []
+        for r, result in enumerate(results):
+            ws.cell(c+2, r+2, value=f"{result[0]} {result[1]}")
+
+            if result[0] in CriteriaValueColorMap:
+                color = CriteriaValueColorMap[result[0]]
+                ws.cell(c+2, r+2).fill = PatternFill(color, color, fill_type="solid")
+
+            if CriteriaValueMap[result[0]] < LowestValue:
+                LowestValue = CriteriaValueMap[result[0]]
+        if LowestValue == 5:
+            ws.cell(c+2, 8, value="DD")
+            continue
+        for result in results:
+            if CriteriaValueMap[result[0]] == LowestValue:
+                LowestResults.append(result[1])
         rs = ", ".join(LowestResults)
-        ws.cell(c+2, 8, value=f"{ValueToCriteria(LowestValue)}[{r_adj}] {rs}")
+        if LowestValue > 3:
+            rs = ""
+        if r_adj != 0:
+            LowestValue += r_adj
+            if LowestValue < 0:
+                LowestValue = 0
+            if LowestValue > 4:
+                LowestValue = 4
+            ws.cell(c+2, 8, value=f"{ValueToCriteria(LowestValue)}[{r_adj}] {rs}")
+        else:
+            ws.cell(c+2, 8, value=f"{ValueToCriteria(LowestValue)} {rs}")
+
+        final_criteria = ValueToCriteria(LowestValue)
+        if final_criteria in CriteriaValueColorMap:
+            color = CriteriaValueColorMap[final_criteria]
+            ws.cell(c+2, 8).fill = PatternFill(color, color, fill_type="solid")
+
 
     wb.save(filename = out_file)
 
@@ -356,6 +378,7 @@ def Assess(data):
 if __name__ == '__main__':
     data = FormatData("Target.xlsx")
     Assess(data)
+    # print(data)
     # spe_list = list(data.keys())
     # for i,v in enumerate(data["Aphyocypris amnis Liao, Kullander & Lin, 2011"]['cd']):
     #     print(i, v)
