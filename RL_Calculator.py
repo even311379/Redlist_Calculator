@@ -312,7 +312,7 @@ def ValueToCriteria(v):
     return "LC"
 
 def Assess(data):
-    out_file = "assess_result_DD.xlsx"
+    out_file = "assess_result.xlsx"
     wb = Workbook()
     ws = wb.active
     ws.title = "results"
@@ -335,7 +335,7 @@ def Assess(data):
         ]
         ws.cell(c+2, 1, value=s)
         r_adj = data[s]['rc'][4]
-        ws.cell(c+2, 7, value=r_adj)
+        ws.cell(c+2, 7, value=r_adj*-1)
         LowestValue = 5
         LowestResults = []
         for r, result in enumerate(results):
@@ -362,7 +362,7 @@ def Assess(data):
                 LowestValue = 0
             if LowestValue > 4:
                 LowestValue = 4
-            ws.cell(c+2, 8, value=f"{ValueToCriteria(LowestValue)}[{r_adj}] {rs}")
+            ws.cell(c+2, 8, value=f"{ValueToCriteria(LowestValue)}[{r_adj*-1}] {rs}")
         else:
             ws.cell(c+2, 8, value=f"{ValueToCriteria(LowestValue)} {rs}")
 
